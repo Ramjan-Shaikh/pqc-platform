@@ -1,8 +1,8 @@
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const util = require('util');
-const execPromise = util.promisify(exec);
+const execFilePromise = util.promisify(execFile);
 
 const MAX_SIZE_BYTES = 500 * 1024 * 1024; // 500 MB hard limit
 const CLONE_TIMEOUT_MS = 300000; // 5 minutes
@@ -24,16 +24,26 @@ async function getDirectorySize(dirPath) {
 }
 
 async function cloneRepository(repoUrl, destination) {
+    if (!repoUrl || typeof repoUrl !== 'string') {
+        throw new Error('Invalid repository URL.');
+    }
+    // Check that it's a valid http/https or git/ssh URL and doesn't contain shell control characters
+    const isSafeUrl = /^(https?:\/\/|git@|git:\/\/)[a-zA-Z0-9_\-.:@/]+$/.test(repoUrl);
+    if (!isSafeUrl) {
+        throw new Error('Repository URL format is invalid or contains forbidden characters.');
+    }
+
     console.log(`Cloning ${repoUrl} into ${destination}...`);
 
-    // 1. Timeout enforced via exec options
+    // 1. Timeout enforced via execFile options
     // 2. --depth 1 isolates history size
-    await execPromise(`git clone --depth 1 "${repoUrl}" "${destination}"`, {
+    // 3. Safe parameter passing via execFile arrays bypasses the shell completely
+    await execFilePromise('git', ['clone', '--depth', '1', repoUrl, destination], {
         timeout: CLONE_TIMEOUT_MS,
         killSignal: 'SIGKILL'
     });
 
-    // 3. Size limit enforced post-clone
+    // 4. Size limit enforced post-clone
     const size = await getDirectorySize(destination);
     if (size > MAX_SIZE_BYTES) {
         throw new Error(`Repository exceeds maximum allowed size of ${MAX_SIZE_BYTES} bytes. Found ${size} bytes.`);

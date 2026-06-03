@@ -132,3 +132,5 @@ npm start
 Frontend
 
 python3 -m http.server 8000
+
+lsof -ti:3000 | xargs kill -9

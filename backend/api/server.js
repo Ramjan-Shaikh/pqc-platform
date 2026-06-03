@@ -74,6 +74,60 @@ const mapJobToAnalysis = (job) => {
     };
 };
 
+// Infer a meaningful usage type from whatever the analyzer provides
+const inferUsageType = (f) => {
+    // 1. Use explicit usageType if it's already meaningful
+    if (f.usageType && f.usageType !== 'UNKNOWN') return f.usageType;
+
+    // 2. Parse "Usage classified as X" from evidenceTrace (skip if X is UNKNOWN)
+    if (Array.isArray(f.evidenceTrace)) {
+        for (const trace of f.evidenceTrace) {
+            const match = trace.match(/Usage classified as (\w+)/i);
+            if (match && match[1].toUpperCase() !== 'UNKNOWN') return match[1].toUpperCase();
+        }
+        // Deep keyword clues in evidenceTrace
+        const traces = f.evidenceTrace.join(' ').toLowerCase();
+        if (traces.includes('publickey') || traces.includes('privatekey')) {
+            const algo = (f.algorithm || '').toUpperCase();
+            if (algo === 'RSA') return 'SIGNATURE';
+            if (algo.includes('ECDSA') || algo.includes('DSA')) return 'SIGNATURE';
+            if (algo.includes('ECDH') || algo.includes('DH')) return 'KEY_EXCHANGE';
+            return 'KEY_GENERATION';
+        }
+        if (traces.includes('keystore') || traces.includes('keystorekeyFactory')) return 'KEY_STORAGE';
+        if (traces.includes('cipher')) return 'ENCRYPTION';
+        if (traces.includes('signature') || traces.includes('sign(') || traces.includes('verify(')) return 'SIGNATURE';
+        if (traces.includes('keyagreement')) return 'KEY_EXCHANGE';
+        if (traces.includes('keypairgenerator') || traces.includes('keygenerator') || traces.includes('initialize()')) return 'KEY_GENERATION';
+        if (traces.includes('messagedigest') || traces.includes('digest')) return 'HASHING';
+        if (traces.includes('mac') && !traces.includes('algorithm')) return 'MAC';
+    }
+
+    // 3. Use usageCategory as a fallback
+    if (f.usageCategory && f.usageCategory !== 'UNKNOWN') {
+        // Map longer descriptions to short labels
+        const cat = f.usageCategory.toLowerCase();
+        if (cat.includes('transit') || cat.includes('rest')) return 'ENCRYPTION';
+        if (cat.includes('sign') || cat.includes('verify')) return 'SIGNATURE';
+        if (cat.includes('auth') || cat.includes('handshake')) return 'HANDSHAKE';
+        if (cat.includes('key') || cat.includes('exchange')) return 'KEY_EXCHANGE';
+        if (cat.includes('hash') || cat.includes('digest')) return 'HASHING';
+        return f.usageCategory.split('/')[0].trim().toUpperCase();
+    }
+
+    // 4. Infer from algorithm name
+    const algo = (f.algorithm || '').toUpperCase();
+    if (['RSA', 'ECDSA', 'DSA', 'ED25519', 'ED448'].includes(algo)) return 'SIGNATURE';
+    if (['ECDH', 'DH', 'X25519', 'X448'].includes(algo)) return 'KEY_EXCHANGE';
+    if (['AES', 'DES', '3DES', 'CHACHA20', 'BLOWFISH', 'RC4'].includes(algo)) return 'ENCRYPTION';
+    if (['SHA', 'SHA1', 'SHA256', 'SHA512', 'MD5', 'HMAC'].some(h => algo.startsWith(h))) return 'HASHING';
+    if (algo.includes('SIGN')) return 'SIGNATURE';
+    if (algo.includes('ENCRYPT') || algo.includes('CIPHER')) return 'ENCRYPTION';
+    if (algo.includes('KEY')) return 'KEY_GENERATION';
+
+    return 'UNKNOWN';
+};
+
 // Helper to map raw analyzer finding to frontend Finding shape
 const mapFindingToFrontend = (f, index) => ({
     id: String(f.id || index + 1),
@@ -84,7 +138,7 @@ const mapFindingToFrontend = (f, index) => ({
     exposure: f.exposure || f.exposureLevel || 'UNKNOWN',
     tainted: !!f.tainted,
     riskScore: f.riskScore || 0,
-    usageType: f.usageType || f.usageCategory || 'UNKNOWN',
+    usageType: inferUsageType(f),
     recommendedPQC: f.recommendedPQC || f.recommendedReplacement || 'Unknown',
     confidence: typeof f.confidence === 'number' ? f.confidence
         : typeof f.confidenceScore === 'number' ? Math.round(f.confidenceScore * 100)

@@ -87,7 +87,13 @@ public class TaintAnalyzer {
             super.visit(md, arg);
             String callerSig = ExposureDetector.getSignature(md);
             // If the caller has any tainted parameters
-            Set<Integer> callerTaintedParams = methodTaintedParams.getOrDefault(callerSig, Collections.emptySet());
+            Set<Integer> callerTaintedParams = new HashSet<>();
+            for (Map.Entry<String, Set<Integer>> entry : methodTaintedParams.entrySet()) {
+                String key = entry.getKey();
+                if (callerSig.equals(key) || callerSig.matches(key)) {
+                    callerTaintedParams.addAll(entry.getValue());
+                }
+            }
 
             md.findAll(MethodCallExpr.class).forEach(call -> {
                 String calleeName = call.getNameAsString();

@@ -1,6 +1,6 @@
-const { exec } = require('child_process');
+const { execFile } = require('child_process');
 const util = require('util');
-const execPromise = util.promisify(exec);
+const execFilePromise = util.promisify(execFile);
 const path = require('path');
 
 // CLI absolute location. In production, this would be an env var pointing to a built jar.
@@ -13,10 +13,9 @@ const ANALYZER_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max analysis time
  * and parses the standard AnalyzerResponse JSON contract from stdout.
  */
 async function runAnalyzer(repoPath) {
-    const cmd = `java -jar "${ANALYZER_JAR}" --repoPath "${repoPath}"`;
-
     try {
-        const { stdout } = await execPromise(cmd, {
+        // Safe argument passing via execFile avoids shell expansion and command injection
+        const { stdout } = await execFilePromise('java', ['-jar', ANALYZER_JAR, '--repoPath', repoPath], {
             timeout: ANALYZER_TIMEOUT_MS,
             maxBuffer: 10 * 1024 * 1024 // 10MB JSON response buffer
         });

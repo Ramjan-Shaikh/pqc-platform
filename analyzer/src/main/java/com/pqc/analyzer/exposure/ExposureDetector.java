@@ -71,14 +71,24 @@ public class ExposureDetector {
         Set<String> callees = callGraph.getOrDefault(methodSig, Collections.emptySet());
 
         for (String callee : callees) {
-            String currentCalleeExposure = methodExposureMap.getOrDefault(callee, "LOW");
-            // If callee is MEDIUM or LOW, and parent is HIGH, promote callee to HIGH
-            if (!currentCalleeExposure.equals(levelToPropagate) && "HIGH".equals(levelToPropagate)) {
-                methodExposureMap.put(callee, levelToPropagate);
-                changed = true;
+            // Find all fully qualified signatures in methodExposureMap that match this callee short name
+            List<String> matchedSigs = new ArrayList<>();
+            for (String key : methodExposureMap.keySet()) {
+                if (key.contains("." + callee + "(")) {
+                    matchedSigs.add(key);
+                }
             }
-            // Propagate further down the chain
-            changed |= propagateExposureLevel(callee, levelToPropagate, visited);
+
+            for (String matchedSig : matchedSigs) {
+                String currentCalleeExposure = methodExposureMap.getOrDefault(matchedSig, "LOW");
+                // If callee is MEDIUM or LOW, and parent is HIGH, promote callee to HIGH
+                if (!currentCalleeExposure.equals(levelToPropagate) && "HIGH".equals(levelToPropagate)) {
+                    methodExposureMap.put(matchedSig, levelToPropagate);
+                    changed = true;
+                }
+                // Propagate further down the chain
+                changed |= propagateExposureLevel(matchedSig, levelToPropagate, visited);
+            }
         }
         return changed;
     }
